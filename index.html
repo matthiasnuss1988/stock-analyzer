@@ -232,7 +232,7 @@
                 console.log(`Lade Daten für: ${input} (${symbol}) über Netlify Function`);
                 
                 // Rufe deine Netlify Function auf!
-                const response = await fetch('/.netlify/functions/getStockData?symbol=' + symbol);
+                const response = await fetch('/.netlify/functions/stockdata?symbol=' + symbol);
                 
                 if (!response.ok) {
                     const errorData = await response.json();
