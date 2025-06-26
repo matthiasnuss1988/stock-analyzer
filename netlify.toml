@@ -2,6 +2,9 @@
   publish = "./"
   functions = "netlify/functions"
 
+[functions]
+  python_version = "3.9"
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
