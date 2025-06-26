@@ -209,7 +209,8 @@
                 console.log(`🔍 Smart-Suche für: "${userInput}"`);
                 
                 // 🚀 Vercel API URL
-                const apiUrl = `/api/stockdata?symbol=${encodeURIComponent(userInput)}`;
+                
+                const apiUrl = `https://stockanalyzer-three.vercel.app/api/stockdata?symbol=${encodeURIComponent(userInput)}`;
                 console.log("📡 API-Aufruf:", apiUrl);
                 
                 const response = await fetch(apiUrl);
