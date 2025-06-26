@@ -1,9 +1,6 @@
 [build]
-  publish = "./"                          # Ort der index.html etc.
-  functions = "netlify/functions"        # Ort deiner Python-Funktionen
-
-[functions]
-  node_bundler = "esbuild"               # notwendig, aber irrelevant für Python
+  publish = "./"
+  functions = "netlify/functions"
 
 [[redirects]]
   from = "/api/*"
