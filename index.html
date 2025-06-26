@@ -210,7 +210,7 @@
                 
                 // 🚀 Vercel API URL
                 
-                const apiUrl = `https://stockratings.vercel.app/api/stockdata?symbol=${encodeURIComponent(userInput)}`;
+                const apiUrl = `https://stockratings.vercel.app/api/getstockdata?symbol=${encodeURIComponent(userInput)}`;
                 console.log("📡 API-Aufruf:", apiUrl);
                 
                 const response = await fetch(apiUrl);
