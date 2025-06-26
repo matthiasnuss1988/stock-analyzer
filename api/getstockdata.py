@@ -250,10 +250,35 @@ class handler(BaseHTTPRequestHandler):
                     if last_full_year_dividend > 0:
                         dividend_yield = (last_full_year_dividend / current_price) * 100
 
+            # --- Zusätzliche Informationen für bessere Anzeige ---
+            # Versuche WKN/ISIN aus den ticker.info zu extrahieren
+            wkn = info.get('wkn', None)
+            isin = info.get('isin', None)
+            
+            # Fallback: Versuche aus anderen Feldern
+            if not wkn and not isin:
+                # Manchmal stehen diese Infos in anderen Feldern
+                security_info = info.get('quoteType', {})
+                if isinstance(security_info, dict):
+                    wkn = security_info.get('wkn', None)
+                    isin = security_info.get('isin', None)
+            
+            # Sector und Industry für zusätzliche Info
+            sector = info.get('sector', None)
+            industry = info.get('industry', None)
+            
+            # Marktkapitalisierung
+            market_cap = info.get('marketCap', None)
+            
             response_data = {
                 "symbol": symbol,
                 "originalInput": user_input,  # Zeige was der User eingegeben hat
                 "companyName": long_name,
+                "wkn": wkn,
+                "isin": isin,
+                "sector": sector,
+                "industry": industry,
+                "marketCap": market_cap,
                 "prices": prices,
                 "currency": currency,
                 "currentPrice": round(current_price, 2) if current_price is not None else None,
