@@ -43,7 +43,7 @@ symbol_mappings = {
 
 def convert_to_yahoo_symbol(input_symbol):
     """Konvertiert eine Eingabe (WKN, ISIN oder Symbol) in ein Yahoo Finance Symbol."""
-      cleaned = re.sub(r'[^A-Z0-9]', '', input_symbol.upper())
+    cleaned = re.sub(r'[^A-Z0-9]', '', input_symbol.upper())
     # Prüfe zuerst in den Mappings, dann versuche es direkt (für gängige Yahoo-Symbole)
     return symbol_mappings.get(cleaned, input_symbol.upper())
 
