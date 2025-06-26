@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/stockdata.py": {
+      "runtime": "python3.9"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
+  ]
+}
