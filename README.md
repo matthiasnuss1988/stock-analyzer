@@ -1,1 +1,1 @@
-# stock-analyzer
+# stockanalyzer
