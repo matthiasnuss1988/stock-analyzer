@@ -10,44 +10,128 @@ from urllib.parse import urlparse, parse_qs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Mappings für WKN/ISIN zu Yahoo-Symbolen (erweitert)
-symbol_mappings = {
-    '716460': 'SAP.DE',
-    'DE0007164600': 'SAP.DE',
-    '840400': 'ALV.DE',
-    'DE0008404005': 'ALV.DE',
-    '723610': 'SIE.DE',
-    'DE0007236101': 'SIE.DE',
-    '519000': 'BMW.DE',
-    'DE0005190003': 'BMW.DE',
-    'BASF11': 'BAS.DE',
-    'DE000BASF111': 'BAS.DE',
-    '515100': 'MBG.DE', # Mercedes-Benz
-    'DE0005151005': 'MBG.DE',
-    '766403': 'VOW3.DE', # Volkswagen
-    'DE0007664039': 'VOW3.DE',
-    '850471': 'ADS.DE', # Adidas
-    'DE000A1EWWW0': 'ADS.DE',
+def smart_symbol_search(user_input):
+    """
+    Intelligente Suche nach Yahoo Finance Symbol basierend auf verschiedenen Eingabeformaten:
+    - Yahoo Symbol (AAPL, SAP.DE)
+    - WKN (6 Ziffern: 716460)
+    - ISIN (12 Zeichen: DE0007164600)
+    - Firmenname (Apple, SAP)
+    """
+    user_input = user_input.strip()
+    logger.info(f"Suche Symbol für: '{user_input}'")
     
-    # Gängige US-Aktien
-    'AAPL': 'AAPL',
-    'MSFT': 'MSFT',
-    'GOOGL': 'GOOGL',
-    'AMZN': 'AMZN',
-    'TSLA': 'TSLA',
-    'NVDA': 'NVDA',
+    # 1. Prüfe ob es bereits ein gültiges Yahoo Symbol ist
+    if is_valid_yahoo_symbol(user_input):
+        logger.info(f"'{user_input}' ist bereits ein gültiges Yahoo Symbol")
+        return user_input.upper()
+    
+    # 2. Erkenne Format und suche entsprechend
+    symbol_format = detect_input_format(user_input)
+    logger.info(f"Erkanntes Format: {symbol_format}")
+    
+    if symbol_format == "wkn":
+        return search_by_wkn(user_input)
+    elif symbol_format == "isin":
+        return search_by_isin(user_input)
+    elif symbol_format == "company_name":
+        return search_by_company_name(user_input)
+    else:
+        # Fallback: Versuche generische Suche
+        return search_generic(user_input)
 
-    # Beispiel für NASDAQ Symbole falls direkt eingegeben
-    'NDX': '^NDX', # Nasdaq 100 Index
-    'DJI': '^DJI', # Dow Jones Industrial Average
-    'GDAXI': '^GDAXI', # DAX Index
-}
+def is_valid_yahoo_symbol(symbol):
+    """Prüft ob ein Symbol bereits ein gültiges Yahoo Symbol ist."""
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        # Wenn wir grundlegende Infos bekommen, ist es ein gültiges Symbol
+        return 'symbol' in info or 'shortName' in info or 'longName' in info
+    except:
+        return False
 
-def convert_to_yahoo_symbol(input_symbol):
-    """Konvertiert eine Eingabe (WKN, ISIN oder Symbol) in ein Yahoo Finance Symbol."""
-    cleaned = re.sub(r'[^A-Z0-9]', '', input_symbol.upper())
-    # Prüfe zuerst in den Mappings, dann versuche es direkt (für gängige Yahoo-Symbole)
-    return symbol_mappings.get(cleaned, input_symbol.upper())
+def detect_input_format(user_input):
+    """Erkennt das Format der Eingabe."""
+    cleaned = re.sub(r'[^A-Z0-9]', '', user_input.upper())
+    
+    # WKN: Genau 6 Ziffern
+    if re.match(r'^\d{6}$', cleaned):
+        return "wkn"
+    
+    # ISIN: 12 Zeichen, beginnt mit 2 Buchstaben
+    if re.match(r'^[A-Z]{2}[A-Z0-9]{10}$', cleaned):
+        return "isin"
+    
+    # Enthält Buchstaben und ist länger als 6 Zeichen -> wahrscheinlich Firmenname
+    if len(user_input) > 6 and re.search(r'[a-zA-Z]', user_input):
+        return "company_name"
+    
+    return "unknown"
+
+def search_by_wkn(wkn):
+    """Sucht nach Yahoo Symbol basierend auf WKN."""
+    # Deutsche WKNs haben oft .DE oder .F (Frankfurt) Endung
+    possible_suffixes = ['.DE', '.F', '']
+    
+    # Erst versuchen mit bekannten deutschen Börsen-Suffixen
+    for suffix in possible_suffixes:
+        try:
+            # Manche deutsche Aktien haben WKN als Teil des Symbols
+            test_symbol = wkn + suffix
+            if is_valid_yahoo_symbol(test_symbol):
+                return test_symbol
+        except:
+            continue
+    
+    # Fallback: Suche über yfinance
+    return search_generic(wkn)
+
+def search_by_isin(isin):
+    """Sucht nach Yahoo Symbol basierend auf ISIN."""
+    # Deutsche ISINs beginnen mit DE
+    if isin.startswith('DE'):
+        # Versuche mit .DE Suffix
+        test_symbols = [isin + '.DE', isin + '.F']
+        for symbol in test_symbols:
+            if is_valid_yahoo_symbol(symbol):
+                return symbol
+    
+    # US ISINs beginnen mit US
+    elif isin.startswith('US'):
+        # US Aktien haben normalerweise kein Suffix
+        if is_valid_yahoo_symbol(isin):
+            return isin
+    
+    # Fallback: Suche über yfinance
+    return search_generic(isin)
+
+def search_by_company_name(company_name):
+    """Sucht nach Yahoo Symbol basierend auf Firmenname."""
+    return search_generic(company_name)
+
+def search_generic(query):
+    """Generische Suche über yfinance.search()."""
+    try:
+        logger.info(f"Führe yfinance.search() aus für: '{query}'")
+        
+        # Versuche yfinance search
+        search_results = yf.search(query)
+        
+        if search_results and len(search_results) > 0:
+            # Nimm das erste Ergebnis
+            best_match = search_results.iloc[0]
+            symbol = best_match['symbol']
+            logger.info(f"yfinance.search() gefunden: {symbol} ({best_match.get('shortName', 'N/A')})")
+            return symbol
+        else:
+            logger.warning(f"yfinance.search() fand keine Ergebnisse für '{query}'")
+            # Fallback: Verwende die Eingabe direkt (vielleicht ist es trotzdem ein gültiges Symbol)
+            return query.upper()
+            
+    except Exception as e:
+        logger.error(f"Fehler bei yfinance.search(): {e}")
+        # Fallback: Verwende die Eingabe direkt
+        return query.upper()
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -65,19 +149,29 @@ class handler(BaseHTTPRequestHandler):
         symbol_param = query_params.get('symbol', [None])
         if not symbol_param or not symbol_param[0]:
             logger.warning("Fehler: 'symbol' Parameter fehlt im Request.")
-            self._send_error_response(400, 'Symbol-Parameter fehlt. Bitte geben Sie ein gültiges Symbol, WKN oder ISIN ein.')
+            self._send_error_response(400, 'Symbol-Parameter fehlt. Bitte geben Sie ein Symbol, WKN, ISIN oder Firmenname ein.')
             return
 
-        input_symbol = symbol_param[0]
-        # Konvertiere die Eingabe zu einem Yahoo Finance Symbol
-        symbol = convert_to_yahoo_symbol(input_symbol)
-        logger.info(f"Anfrage für Input: {input_symbol}, konvertiert zu Yahoo Symbol: {symbol}")
+        user_input = symbol_param[0]
+        
+        # 🎯 HIER IST DIE MAGIE: Intelligente Symbol-Suche!
+        try:
+            symbol = smart_symbol_search(user_input)
+            logger.info(f"Konvertiert '{user_input}' zu Yahoo Symbol: '{symbol}'")
+        except Exception as e:
+            logger.error(f"Fehler bei Symbol-Suche: {e}")
+            symbol = user_input.upper()  # Fallback
 
         try:
             ticker = yf.Ticker(symbol)
 
             # --- Aktuelle Daten abrufen ---
             info = ticker.info
+            
+            # Prüfe ob wir überhaupt Daten bekommen haben
+            if not info or len(info) < 5:
+                raise ValueError(f"Keine Daten für Symbol '{symbol}' gefunden. Möglicherweise ist '{user_input}' kein gültiges Symbol/WKN/ISIN.")
+            
             # Prüfe, ob grundlegende Daten wie 'currentPrice' vorhanden sind
             if 'currentPrice' not in info or info.get('currentPrice') is None:
                 # Versuche, den Kurs über eine kurze Historie zu bekommen, falls info leer ist
@@ -90,12 +184,12 @@ class handler(BaseHTTPRequestHandler):
                 else:
                     logger.warning(f"Keine aktuellen Preisdaten in ticker.info oder history für {symbol}.")
                     # Wenn auch das nicht klappt, schlagen wir fehl
-                    raise ValueError("Keine aktuellen Preisdaten gefunden.")
+                    raise ValueError(f"Keine aktuellen Preisdaten für '{user_input}' gefunden.")
             else:
                 current_price = info.get('currentPrice')
                 previous_close = info.get('previousClose')
 
-            long_name = info.get('longName', symbol)
+            long_name = info.get('longName', info.get('shortName', symbol))
             currency = info.get('currency', 'EUR') # Standard auf EUR für deutsche, USD für US-Aktien
 
             market_change = None
@@ -158,6 +252,7 @@ class handler(BaseHTTPRequestHandler):
 
             response_data = {
                 "symbol": symbol,
+                "originalInput": user_input,  # Zeige was der User eingegeben hat
                 "companyName": long_name,
                 "prices": prices,
                 "currency": currency,
@@ -169,17 +264,17 @@ class handler(BaseHTTPRequestHandler):
                 "dividendYield": round(dividend_yield, 2)
             }
             
-            logger.info(f"Daten für {symbol} erfolgreich abgerufen.")
+            logger.info(f"Daten für {symbol} (eingegeben: {user_input}) erfolgreich abgerufen.")
             self._send_success_response(response_data)
 
         except Exception as e:
-            logger.error(f"Fehler beim Abrufen der Daten für {symbol}: {e}", exc_info=True)
-            error_message = f"Fehler beim Abrufen der Daten für '{input_symbol}'. Möglicherweise ist das Symbol ungültig oder es gab ein temporäres Problem. Details: {str(e)}"
+            logger.error(f"Fehler beim Abrufen der Daten für {symbol} (eingegeben: {user_input}): {e}", exc_info=True)
+            error_message = f"Fehler beim Abrufen der Daten für '{user_input}'. Bitte prüfen Sie die Eingabe (Symbol, WKN, ISIN oder Firmenname). Details: {str(e)}"
             
-            if "No data found for this date range" in str(e) or "empty DataFrame" in str(e):
-                 error_message = f"Für '{input_symbol}' wurden keine Daten gefunden. Bitte prüfen Sie das Symbol."
+            if "No data found" in str(e) or "empty DataFrame" in str(e):
+                 error_message = f"Für '{user_input}' wurden keine Daten gefunden. Bitte prüfen Sie die Eingabe."
             elif "Invalid input" in str(e):
-                 error_message = f"Ungültiges Symbol '{input_symbol}'. Bitte verwenden Sie ein gültiges Yahoo Finance Symbol, WKN oder ISIN."
+                 error_message = f"Ungültige Eingabe '{user_input}'. Bitte verwenden Sie ein gültiges Symbol, WKN, ISIN oder Firmenname."
 
             self._send_error_response(500, error_message)
     
