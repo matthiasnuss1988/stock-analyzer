@@ -6,7 +6,6 @@
     <title>Aktien-Analyzer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
-        /* Dein gesamtes CSS hier */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 10px; font-size: 14px; }
         .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); overflow: hidden; }
@@ -55,7 +54,7 @@
     <div class="container">
         <div class="header">
             <h1>📊 Aktien-Analyzer</h1>
-            <p>CAGR & Dividenden-Analyse</p>
+            <p>GeoPAK10 & Dividenden-Analyse</p>
         </div>
         
         <div class="controls">
@@ -90,7 +89,8 @@
             
             <div id="stockInfo" class="stock-info" style="display: none;">
                 <div class="stock-title" id="stockTitle"></div>
-                <div class="search-info" id="searchInfo" style="font-size: 11px; color: #666; margin-bottom: 10px; display: none;">
+                <div class="stock-details" id="stockDetails" style="font-size: 11px; color: #666; margin-bottom: 10px;"></div>
+                <div class="search-info" id="searchInfo" style="font-size: 11px; color: #4CAF50; margin-bottom: 10px; display: none;">
                     <span id="originalInput"></span>
                 </div>
                 <div class="metrics-grid">
@@ -113,4 +113,488 @@
                 </div>
             </div>
             
-            <div id="cagrSection" class="cagr-section" style="display:
+            <div id="cagrSection" class="cagr-section" style="display: none;">
+                <div class="cagr-title">📈 GeoPAK10-Analyse (nach börse.de)</div>
+                <div class="cagr-description" style="font-size: 11px; color: #666; margin-bottom: 8px;">
+                    Geometrische Per Anno Kursentwicklung der letzten 10 Jahre
+                </div>
+                <div class="cagr-grid">
+                    <div class="cagr-item">
+                        <div class="metric-label">GeoPAK10 Kurs</div>
+                        <div class="metric-value" id="cagrPrice"></div>
+                        <div style="font-size: 10px; color: #666; margin-top: 2px;">Nur Kursentwicklung</div>
+                    </div>
+                    <div class="cagr-item">
+                        <div class="metric-label">GeoPAK10 Total</div>
+                        <div class="metric-value" id="cagrTotal"></div>
+                        <div style="font-size: 10px; color: #666; margin-top: 2px;">Mit Dividenden</div>
+                    </div>
+                </div>
+                <div class="cagr-details" id="cagrDetails" style="font-size: 11px; color: #666; margin-top: 8px; text-align: center;"></div>
+            </div>
+            
+            <div class="chart-wrapper">
+                <div class="chart-title">📈 Kursverlauf</div>
+                <div class="chart-container">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-wrapper">
+                <div class="chart-title">💰 Dividendenrendite pro Jahr (10 Jahre)</div>
+                <div class="dividend-chart-container">
+                    <canvas id="dividendChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let priceChart = null;
+        let dividendChart = null;
+        let currentPeriod = '5y';
+        let currentScale = 'linear';
+        let currentInput = '';
+        window.stockData = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("🚀 Seite geladen, registriere Event-Listener...");
+            
+            document.querySelectorAll('.time-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    currentPeriod = this.dataset.period;
+                    if (window.stockData) updateCharts();
+                });
+            });
+
+            document.querySelectorAll('.scale-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.scale-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    currentScale = this.dataset.scale;
+                    if (window.stockData) updateCharts();
+                });
+            });
+
+            document.getElementById('symbolInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    loadStockData();
+                }
+            });
+            
+            // Lade SAP als Beispiel
+            loadStockData();
+        });
+
+        async function loadStockData() {
+            console.log("🔍 loadStockData() aufgerufen");
+            
+            let userInput = document.getElementById('symbolInput').value.trim();
+            console.log("📝 Eingabe:", userInput);
+            
+            if (!userInput) {
+                console.log("❌ Keine Eingabe!");
+                showError('Bitte geben Sie ein Symbol, WKN, ISIN oder Firmenname ein.');
+                return;
+            }
+
+            currentInput = userInput;
+            showLoading(true);
+            hideError();
+            hideStockInfo();
+
+            try {
+                console.log(`🔍 Smart-Suche für: "${userInput}"`);
+                
+                // 🚀 Vercel API URL
+                const apiUrl = `/api/stockdata?symbol=${encodeURIComponent(userInput)}`;
+                console.log("📡 API-Aufruf:", apiUrl);
+                
+                const response = await fetch(apiUrl);
+                console.log("📊 Response Status:", response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error("❌ Server Fehler:", errorText);
+                    throw new Error(`Serverfehler (${response.status}): ${errorText}`);
+                }
+
+                const stockData = await response.json();
+                console.log("✅ Daten vom Backend erhalten:", stockData);
+                
+                if (stockData.originalInput && stockData.symbol && stockData.originalInput !== stockData.symbol) {
+                    console.log(`🎯 "${stockData.originalInput}" wurde zu "${stockData.symbol}" konvertiert`);
+                }
+                
+                if (!stockData.prices || stockData.prices.length === 0) {
+                    throw new Error("Keine Kursdaten für diese Eingabe verfügbar.");
+                }
+
+                // Datums-Strings zu Date-Objekten konvertieren
+                stockData.prices = stockData.prices.map(p => ({
+                    ...p,
+                    date: new Date(p.date)
+                }));
+
+                window.stockData = stockData;
+                
+                updateCharts();
+                showStockInfo(window.stockData);
+                calculateAndShowCAGR();
+                showLoading(false);
+
+            } catch (error) {
+                console.error('❌ Fehler beim Laden der Daten:', error);
+                showError(`Fehler beim Suchen von "${userInput}": ${error.message}`);
+                showLoading(false);
+            }
+        }
+
+        function showStockInfo(data) {
+            const change = data.marketChange || 0;
+            const changePercent = data.marketChangePercent || 0;
+            const changeClass = change >= 0 ? 'positive' : 'negative';
+
+            // Zeige Volltext-Firmenname prominent
+            document.getElementById('stockTitle').textContent = `${data.companyName}`;
+            
+            // Zeige Symbol, WKN, ISIN Details
+            let detailsText = `Symbol: ${data.symbol}`;
+            if (data.wkn) detailsText += ` • WKN: ${data.wkn}`;
+            if (data.isin) detailsText += ` • ISIN: ${data.isin}`;
+            if (data.sector) detailsText += ` • ${data.sector}`;
+            document.getElementById('stockDetails').textContent = detailsText;
+            
+            // Zeige ursprüngliche Eingabe (Smart-Suche Hinweis)
+            if (data.originalInput && data.originalInput !== data.symbol) {
+                document.getElementById('searchInfo').style.display = 'block';
+                let inputType = 'Eingabe';
+                const cleaned = data.originalInput.replace(/[^A-Z0-9]/g, '').toUpperCase();
+                if (/^\d{6}$/.test(cleaned)) {
+                    inputType = 'WKN';
+                } else if (/^[A-Z]{2}[A-Z0-9]{10}$/.test(cleaned)) {
+                    inputType = 'ISIN';
+                } else if (data.originalInput.length > 6 && /[a-zA-Z]/.test(data.originalInput)) {
+                    inputType = 'Firmenname';
+                }
+                document.getElementById('originalInput').textContent = `✅ Smart-Suche: ${inputType} "${data.originalInput}" gefunden`;
+            } else {
+                document.getElementById('searchInfo').style.display = 'none';
+            }
+            
+            document.getElementById('currentPrice').textContent = `${data.currentPrice !== null ? data.currentPrice.toFixed(2) : 'N/A'} ${data.currency || ''}`;
+            document.getElementById('priceChange').innerHTML = `<span class="${changeClass}">${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(1)}%)</span>`;
+            
+            if (data.dividendYield !== null && data.dividendYield > 0) {
+                document.getElementById('dividendYield').textContent = `${data.dividendYield.toFixed(2)}%`;
+                document.getElementById('dividendYield').className = 'metric-value positive';
+            } else {
+                document.getElementById('dividendYield').textContent = 'N/A';
+                document.getElementById('dividendYield').className = 'metric-value';
+            }
+            
+            if (data.dividends && data.dividends.length > 0) {
+                const lastDiv = data.dividends[0]; 
+                document.getElementById('lastDividend').textContent = `${lastDiv.amount.toFixed(2)} ${data.currency || ''}`;
+            } else {
+                document.getElementById('lastDividend').textContent = 'Keine';
+            }
+            
+            document.getElementById('stockInfo').style.display = 'block';
+        }
+
+        function calculateAndShowCAGR() {
+            if (!window.stockData || !window.stockData.prices || window.stockData.prices.length < 1) {
+                document.getElementById('cagrSection').style.display = 'none';
+                return;
+            }
+
+            const prices = window.stockData.prices;
+            const dividends = window.stockData.dividends || [];
+            
+            const tenYearsAgoDate = new Date();
+            tenYearsAgoDate.setFullYear(tenYearsAgoDate.getFullYear() - 10);
+            
+            const nineYearsAgoDate = new Date();
+            nineYearsAgoDate.setFullYear(nineYearsAgoDate.getFullYear() - 9);
+            
+            const first12MonthsPrices = prices.filter(p => 
+                p.date >= tenYearsAgoDate && p.date <= nineYearsAgoDate
+            );
+            
+            if (first12MonthsPrices.length < 10) {
+                document.getElementById('cagrSection').style.display = 'none';
+                console.warn("Nicht genug Daten für GeoPAK10-Berechnung der ersten 12 Monate.");
+                return;
+            }
+            
+            const avgFirst12Months = first12MonthsPrices.reduce((sum, p) => sum + p.close, 0) / first12MonthsPrices.length;
+            const currentPrice = window.stockData.currentPrice;
+
+            if (!avgFirst12Months || !currentPrice || currentPrice === 0) {
+                document.getElementById('cagrSection').style.display = 'none';
+                console.warn("Durchschnittskurs oder aktueller Preis fehlen für GeoPAK10.");
+                return;
+            }
+            
+            const geoPak10Price = Math.pow(currentPrice / avgFirst12Months, 1/10) - 1;
+            
+            let totalDividends = 0;
+            const currentYear = new Date().getFullYear();
+            const startYear = tenYearsAgoDate.getFullYear();
+            
+            for (const div of dividends) {
+                if (div.year >= startYear && div.year <= currentYear) {
+                    totalDividends += div.amount;
+                }
+            }
+            
+            const totalReturn = currentPrice + totalDividends;
+            const geoPak10Total = Math.pow(totalReturn / avgFirst12Months, 1/10) - 1;
+            
+            document.getElementById('cagrPrice').textContent = `${(geoPak10Price * 100).toFixed(1)}%`;
+            document.getElementById('cagrPrice').className = geoPak10Price >= 0 ? 'metric-value positive' : 'metric-value negative';
+            
+            document.getElementById('cagrTotal').textContent = `${(geoPak10Total * 100).toFixed(1)}%`;
+            document.getElementById('cagrTotal').className = geoPak10Total >= 0 ? 'metric-value positive' : 'metric-value negative';
+            
+            const startDate = tenYearsAgoDate.toLocaleDateString('de-DE');
+            const endDate = nineYearsAgoDate.toLocaleDateString('de-DE');
+            const currency = window.stockData.currency || '';
+            
+            let detailsText = `Basis: Ø erste 12 Monate (${startDate} - ${endDate})\n`;
+            detailsText += `Durchschnittskurs: ${avgFirst12Months.toFixed(2)} ${currency} → Aktuell: ${currentPrice.toFixed(2)} ${currency}\n`;
+            detailsText += `Gesamtdividenden (10J): ${totalDividends.toFixed(2)} ${currency}`;
+            
+            document.getElementById('cagrDetails').textContent = detailsText;
+            document.getElementById('cagrSection').style.display = 'block';
+        }
+
+        function updateCharts() {
+            if (!window.stockData) return;
+            updatePriceChart();
+            updateDividendChart();
+        }
+
+        function updatePriceChart() {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            let filteredData = filterDataByPeriod(window.stockData.prices, currentPeriod);
+            
+            if (filteredData.length > 500) {
+                const step = Math.ceil(filteredData.length / 500);
+                filteredData = filteredData.filter((_, index) => index % step === 0);
+            }
+            
+            const labels = filteredData.map(item => item.date.toLocaleDateString('de-DE'));
+            const prices = filteredData.map(item => item.close);
+
+            if (priceChart) {
+                priceChart.destroy();
+            }
+
+            priceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: window.stockData.symbol,
+                        data: prices,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 1.5,
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 0,
+                        pointHoverRadius: 3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: (context) => `${context.parsed.y.toFixed(2)} ${window.stockData.currency || ''}`
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: currentScale,
+                            beginAtZero: false, 
+                            grid: { display: false },
+                            ticks: { font: { size: 10 } }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { 
+                                maxTicksLimit: 5,
+                                font: { size: 10 }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateDividendChart() {
+            const ctx = document.getElementById('dividendChart').getContext('2d');
+            
+            if (!window.stockData.dividends || window.stockData.dividends.length === 0) {
+                if (dividendChart) {
+                    dividendChart.destroy();
+                    dividendChart = null;
+                }
+                document.querySelector('.chart-wrapper:has(#dividendChart)').style.display = 'none';
+                return;
+            } else {
+                document.querySelector('.chart-wrapper:has(#dividendChart)').style.display = 'block';
+            }
+
+            const sortedDividends = [...window.stockData.dividends].sort((a, b) => a.year - b.year);
+            const prices = window.stockData.prices;
+            
+            const dividendYields = [];
+            
+            for (const divData of sortedDividends) {
+                let yearEndPrice = null;
+                for (let i = prices.length - 1; i >= 0; i--) {
+                    if (prices[i].date.getFullYear() === divData.year) {
+                        yearEndPrice = prices[i].close;
+                        break;
+                    }
+                }
+                
+                if (!yearEndPrice) {
+                    for (let i = 0; i < prices.length; i++) {
+                        if (prices[i].date.getFullYear() === divData.year) {
+                            yearEndPrice = prices[i].close;
+                            break;
+                        }
+                    }
+                }
+                
+                if (yearEndPrice && yearEndPrice > 0) {
+                    const dividendYield = (divData.amount / yearEndPrice) * 100;
+                    dividendYields.push({
+                        year: divData.year,
+                        yield: dividendYield,
+                        dividend: divData.amount,
+                        price: yearEndPrice
+                    });
+                } else {
+                    dividendYields.push({
+                        year: divData.year,
+                        yield: 0,
+                        dividend: divData.amount,
+                        price: 0
+                    });
+                }
+            }
+            
+            const labels = dividendYields.map(item => item.year);
+            const yields = dividendYields.map(item => item.yield);
+
+            if (dividendChart) {
+                dividendChart.destroy();
+            }
+
+            dividendChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Dividendenrendite',
+                        data: yields,
+                        backgroundColor: 'rgba(118, 75, 162, 0.8)',
+                        borderColor: '#764ba2',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => {
+                                    const dataPoint = dividendYields[context.dataIndex];
+                                    const currency = window.stockData.currency || '';
+                                    return [
+                                        `Dividendenrendite: ${context.parsed.y.toFixed(2)}%`,
+                                        `Dividende: ${dataPoint.dividend.toFixed(2)} ${currency}`,
+                                        `Aktienkurs: ${dataPoint.price.toFixed(2)} ${currency}`
+                                    ];
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { display: false },
+                            ticks: { 
+                                font: { size: 10 },
+                                callback: function(value) {
+                                    return value.toFixed(1) + '%';
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function filterDataByPeriod(data, period) {
+            if (!data || data.length === 0) return [];
+            const now = new Date();
+            let startDate = new Date(now);
+            switch (period) {
+                case '1y': startDate.setFullYear(now.getFullYear() - 1); break;
+                case '2y': startDate.setFullYear(now.getFullYear() - 2); break;
+                case '3y': startDate.setFullYear(now.getFullYear() - 3); break;
+                case '5y': startDate.setFullYear(now.getFullYear() - 5); break;
+                case '10y': startDate.setFullYear(now.getFullYear() - 10); break;
+                case '20y': startDate.setFullYear(now.getFullYear() - 20); break;
+                default: startDate.setFullYear(now.getFullYear() - 5);
+            }
+            startDate.setHours(0, 0, 0, 0);
+            const filtered = data.filter(item => item.date >= startDate);
+            if (filtered.length < 5 && data.length > 5) {
+                return data.slice(-Math.min(data.length, 50)); 
+            }
+            return filtered;
+        }
+
+        function showLoading(show) {
+            document.getElementById('loadingDiv').style.display = show ? 'block' : 'none';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorDiv');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('errorDiv').style.display = 'none';
+        }
+
+        function hideStockInfo() {
+            document.getElementById('stockInfo').style.display = 'none';
+            document.getElementById('cagrSection').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
